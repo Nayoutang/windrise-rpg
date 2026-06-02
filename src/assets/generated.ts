@@ -1,7 +1,28 @@
 import Phaser from "phaser";
 import { TEXTURES } from "./manifest";
+import {
+  PLAYER_DIRECTIONS,
+  playerAttackTexture,
+  playerTexture,
+} from "../game/systems/PlayerAnimation";
+import { ENEMY_ACTIONS, enemyTexture } from "../game/systems/EnemyAnimation";
 
 type Paint = (graphics: Phaser.GameObjects.Graphics) => void;
+type CharacterColors = { outline: number; coat: number; accent: number; hair: number };
+
+const AYAKA_COLORS: CharacterColors = {
+  outline: 0x38516d,
+  coat: 0xd6edf4,
+  accent: 0x78a7d3,
+  hair: 0xc4d3e4,
+};
+
+const FURINA_COLORS: CharacterColors = {
+  outline: 0x243659,
+  coat: 0x315f91,
+  accent: 0xecf5f6,
+  hair: 0xe7f2ef,
+};
 
 function texture(
   scene: Phaser.Scene,
@@ -22,7 +43,7 @@ function texture(
 function character(
   scene: Phaser.Scene,
   key: string,
-  colors: { outline: number; coat: number; accent: number; hair: number },
+  colors: CharacterColors,
 ): void {
   texture(scene, key, 32, 46, (g) => {
     g.fillStyle(colors.outline).fillRect(9, 2, 14, 38);
@@ -113,18 +134,16 @@ export function createProceduralTextures(scene: Phaser.Scene): void {
     g.fillStyle(0x9aa48e).fillRect(7, 7, 30, 78);
     g.fillStyle(0x6a7472).fillRect(12, 18, 20, 58);
   });
-  character(scene, TEXTURES.ayaka, {
-    outline: 0x38516d,
-    coat: 0xd6edf4,
-    accent: 0x78a7d3,
-    hair: 0xc4d3e4,
-  });
-  character(scene, TEXTURES.furina, {
-    outline: 0x243659,
-    coat: 0x315f91,
-    accent: 0xecf5f6,
-    hair: 0xe7f2ef,
-  });
+  character(scene, TEXTURES.ayaka, AYAKA_COLORS);
+  character(scene, TEXTURES.furina, FURINA_COLORS);
+  for (const direction of PLAYER_DIRECTIONS) {
+    for (const frame of [0, 1, 2]) {
+      character(scene, playerTexture("ayaka", direction, frame), AYAKA_COLORS);
+      character(scene, playerTexture("furina", direction, frame), FURINA_COLORS);
+      character(scene, playerAttackTexture("ayaka", direction, frame), AYAKA_COLORS);
+      character(scene, playerAttackTexture("furina", direction, frame), FURINA_COLORS);
+    }
+  }
   character(scene, TEXTURES.scout, {
     outline: 0x4a3928,
     coat: 0x78a459,
@@ -136,6 +155,15 @@ export function createProceduralTextures(scene: Phaser.Scene): void {
   hilichurl(scene, TEXTURES.hilichurlFighter);
   hilichurl(scene, TEXTURES.hilichurlShooter);
   hilichurl(scene, TEXTURES.mutatedMitachurl, true);
+  for (const action of ENEMY_ACTIONS) {
+    for (const frame of [0, 1, 2]) {
+      slime(scene, enemyTexture("hydro-slime", action, frame), 0x62bdd5, 0xd4f6f5);
+      slime(scene, enemyTexture("cryo-slime", action, frame), 0x9ed9e4, 0xf3ffff);
+      hilichurl(scene, enemyTexture("hilichurl-fighter", action, frame));
+      hilichurl(scene, enemyTexture("hilichurl-shooter", action, frame));
+      hilichurl(scene, enemyTexture("mutated-mitachurl", action, frame), true);
+    }
+  }
   texture(scene, TEXTURES.cryoFx, 52, 20, (g) => {
     g.fillStyle(0xd9fbff).fillTriangle(0, 10, 52, 1, 52, 19);
     g.fillStyle(0x8ed7ed).fillTriangle(2, 10, 37, 6, 37, 14);
@@ -147,5 +175,21 @@ export function createProceduralTextures(scene: Phaser.Scene): void {
   texture(scene, TEXTURES.freezeFx, 38, 44, (g) => {
     g.fillStyle(0xb7eff7, 0.8).fillTriangle(19, 1, 3, 39, 35, 39);
     g.lineStyle(3, 0xf5ffff, 0.9).strokeTriangle(19, 1, 3, 39, 35, 39);
+  });
+  texture(scene, TEXTURES.salonBubbleFx, 30, 30, (g) => {
+    g.fillStyle(0x87e7ef, 0.82).fillEllipse(15, 15, 28, 28);
+    g.fillStyle(0xe1ffff, 0.92).fillEllipse(20, 9, 8, 6);
+  });
+  texture(scene, TEXTURES.ayakaSkillFx, 72, 72, (g) => {
+    g.lineStyle(7, 0xd9fbff, 0.9).strokeCircle(36, 36, 28);
+  });
+  texture(scene, TEXTURES.ayakaBurstFx, 82, 82, (g) => {
+    g.lineStyle(8, 0x8ed7ed, 0.85).strokeCircle(41, 41, 31);
+  });
+  texture(scene, TEXTURES.furinaSkillFx, 72, 72, (g) => {
+    g.lineStyle(7, 0x87e7ef, 0.9).strokeCircle(36, 36, 28);
+  });
+  texture(scene, TEXTURES.furinaBurstFx, 82, 82, (g) => {
+    g.fillStyle(0x65cce5, 0.72).fillEllipse(41, 50, 76, 48);
   });
 }

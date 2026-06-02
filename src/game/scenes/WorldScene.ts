@@ -4,14 +4,22 @@ import { Hud } from "../../ui/hud";
 import { ENEMY_SPAWNS, PLAYERS, type EnemySpawn } from "../data/actors";
 import { LANDMARKS, WORLD_HEIGHT, WORLD_WIDTH } from "../data/map";
 import { CombatSystem, type EnemyState } from "../systems/CombatSystem";
+import { EnemyAnimation, type EnemyAnimationFrame } from "../systems/EnemyAnimation";
 import { GameState } from "../systems/GameState";
 import { InputMap } from "../systems/InputMap";
+import {
+  PlayerAnimation,
+  type PlayerAnimationFrame,
+  type PlayerDirection,
+} from "../systems/PlayerAnimation";
 import { QuestSystem } from "../systems/QuestSystem";
-import type { ElementType, EnemyType } from "../systems/types";
+import type { ElementType } from "../systems/types";
 
 interface EnemyActor {
   sprite: Phaser.Physics.Arcade.Sprite;
   state: EnemyState;
+  animation: EnemyAnimation;
+  animationFrame: EnemyAnimationFrame;
   zone: EnemySpawn["zone"];
   nextAttackAt: number;
 }
@@ -20,7 +28,7 @@ declare global {
   interface Window {
     __windriseDebug?: {
       snapshot: () => {
-        player: { x: number; y: number };
+        player: { x: number; y: number; action: string; direction: PlayerDirection; frame: number; texture: string };
         quest: string;
         activeCharacter: string;
         enemies: Array<{
@@ -33,6 +41,8 @@ declare global {
           hydroUntil: number;
           cryoUntil: number;
           stagger: number;
+          action: string;
+          texture: string;
         }>;
       };
       teleport: (x: number, y: number) => void;
@@ -41,21 +51,15 @@ declare global {
   }
 }
 
-const ENEMY_TEXTURE: Record<EnemyType, string> = {
-  "hydro-slime": TEXTURES.hydroSlime,
-  "cryo-slime": TEXTURES.cryoSlime,
-  "hilichurl-fighter": TEXTURES.hilichurlFighter,
-  "hilichurl-shooter": TEXTURES.hilichurlShooter,
-  "mutated-mitachurl": TEXTURES.mutatedMitachurl,
-};
-
 export class WorldScene extends Phaser.Scene {
   private readonly gameState = GameState.create();
   private readonly combat = new CombatSystem();
   private readonly quest = new QuestSystem();
+  private readonly playerAnimation = new PlayerAnimation();
   private inputMap!: InputMap;
   private hud!: Hud;
   private player!: Phaser.Physics.Arcade.Sprite;
+  private playerAnimationFrame!: PlayerAnimationFrame;
   private scout!: Phaser.Physics.Arcade.Sprite;
   private enemies: EnemyActor[] = [];
   private paused = false;
@@ -107,6 +111,7 @@ export class WorldScene extends Phaser.Scene {
   private resetRuntime(): void {
     this.gameState.reset();
     this.quest.reset();
+    this.playerAnimation.reset();
     this.enemies = [];
     this.paused = false;
     this.dashUntil = 0;
@@ -122,7 +127,14 @@ export class WorldScene extends Phaser.Scene {
     if (!import.meta.env.DEV) return;
     window.__windriseDebug = {
       snapshot: () => ({
-        player: { x: Math.round(this.player.x), y: Math.round(this.player.y) },
+        player: {
+          x: Math.round(this.player.x),
+          y: Math.round(this.player.y),
+          action: this.playerAnimationFrame.action,
+          direction: this.playerAnimationFrame.direction,
+          frame: this.playerAnimationFrame.frame,
+          texture: this.player.texture.key,
+        },
         quest: this.quest.phase,
         activeCharacter: this.gameState.activeCharacter.id,
         enemies: this.enemies.map((enemy) => ({
@@ -135,6 +147,8 @@ export class WorldScene extends Phaser.Scene {
           hydroUntil: enemy.state.status.hydroUntil,
           cryoUntil: enemy.state.status.cryoUntil,
           stagger: enemy.state.status.stagger,
+          action: enemy.animationFrame.action,
+          texture: enemy.sprite.texture.key,
         })),
       }),
       teleport: (x, y) => {
@@ -180,17 +194,20 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private createActors(): void {
-    this.player = this.physics.add.sprite(226, 330, TEXTURES.ayaka).setDepth(5);
+    this.playerAnimationFrame = this.playerAnimation.resolve("ayaka", 0, 0, 0);
+    this.player = this.physics.add.sprite(226, 330, this.playerAnimationFrame.texture).setDepth(5);
     this.player.setCollideWorldBounds(true);
-    this.player.body?.setSize(20, 26).setOffset(6, 18);
+    this.player.body?.setSize(24, 30).setOffset(24, 54);
     this.scout = this.physics.add.sprite(LANDMARKS.scout.x, LANDMARKS.scout.y, TEXTURES.scout).setDepth(4);
     this.scout.setImmovable(true);
     for (const spawn of ENEMY_SPAWNS) {
       const state = this.combat.createEnemy(spawn.type);
-      const sprite = this.physics.add.sprite(spawn.x, spawn.y, ENEMY_TEXTURE[spawn.type]).setDepth(4);
+      const animation = new EnemyAnimation(spawn.type);
+      const animationFrame = animation.resolve(0, 0, 0);
+      const sprite = this.physics.add.sprite(spawn.x, spawn.y, animationFrame.texture).setDepth(4);
       sprite.setCollideWorldBounds(true);
       if (state.isBoss) sprite.setAlpha(0.38);
-      this.enemies.push({ sprite, state, zone: spawn.zone, nextAttackAt: 0 });
+      this.enemies.push({ sprite, state, animation, animationFrame, zone: spawn.zone, nextAttackAt: 0 });
     }
   }
 
@@ -206,12 +223,12 @@ export class WorldScene extends Phaser.Scene {
     const speed = PLAYERS[this.gameState.activeCharacter.id].moveSpeed * (time < this.dashUntil ? 1.9 : 1);
     velocity.normalize().scale(speed);
     this.player.setVelocity(velocity.x, velocity.y);
-    if (velocity.x !== 0) this.player.setFlipX(velocity.x < 0);
+    this.updatePlayerAnimation(time, velocity.x, velocity.y);
   }
 
   private handleActions(time: number): void {
     if (this.inputMap.pressed("switch") && this.gameState.switchCharacter(time)) {
-      this.player.setTexture(TEXTURES[this.gameState.activeCharacter.id]);
+      this.updatePlayerAnimation(time, this.player.body?.velocity.x ?? 0, this.player.body?.velocity.y ?? 0);
       this.hud.showToast(`切换为 ${this.gameState.activeCharacter.name}`);
       this.flashAt(this.player.x, this.player.y, 0xdffcff, 48);
     }
@@ -224,6 +241,8 @@ export class WorldScene extends Phaser.Scene {
   private useAttack(time: number): void {
     if (time < this.attackReadyAt) return;
     this.attackReadyAt = time + 380;
+    this.playerAnimation.attack(time);
+    this.updatePlayerAnimation(time, this.player.body?.velocity.x ?? 0, this.player.body?.velocity.y ?? 0);
     if (this.gameState.activeCharacter.id === "ayaka") {
       this.damageNearest(105, 11, "physical", time);
       this.attackFx(TEXTURES.cryoFx, 0.64);
@@ -238,14 +257,15 @@ export class WorldScene extends Phaser.Scene {
     this.skillReadyAt = time + 4600;
     if (this.gameState.activeCharacter.id === "ayaka") {
       this.damageArea(165, 21, "cryo", time);
-      this.attackFx(TEXTURES.cryoFx, 1.35);
+      this.centeredFx(TEXTURES.ayakaSkillFx, 0.88, 480);
       this.hud.showToast("冰华斩 · 冰元素附着");
     } else {
       this.salonUntil = time + 8200;
       this.salonNextAttackAt = time;
+      this.centeredFx(TEXTURES.furinaSkillFx, 0.82, 520);
       this.hud.showToast("沙龙成员登场 · 持续水元素攻击");
       for (const angle of [0, 120, 240]) {
-        const member = this.add.circle(this.player.x, this.player.y, 8, 0x92e9ed).setDepth(6);
+        const member = this.add.image(this.player.x, this.player.y, TEXTURES.salonBubbleFx).setDepth(6).setScale(0.58);
         this.tweens.add({
           targets: member,
           x: this.player.x + Math.cos(Phaser.Math.DegToRad(angle)) * 68,
@@ -264,11 +284,11 @@ export class WorldScene extends Phaser.Scene {
     if (this.gameState.activeCharacter.id === "ayaka") {
       this.damageArea(280, 38, "cryo", time);
       this.hud.showToast("霜灭 · 冰风暴席卷前方");
-      this.flashAt(this.player.x, this.player.y, 0xc8f4ff, 175);
+      this.centeredFx(TEXTURES.ayakaBurstFx, 1.18, 760);
     } else {
       this.damageArea(340, 28, "hydro", time);
       this.hud.showToast("众水的歌剧 · 水元素共鸣");
-      this.flashAt(this.player.x, this.player.y, 0x65cce5, 210);
+      this.centeredFx(TEXTURES.furinaBurstFx, 1.22, 760);
     }
   }
 
@@ -286,11 +306,13 @@ export class WorldScene extends Phaser.Scene {
       const bossLocked = enemy.zone === "boss" && !this.quest.canEnterBossArena;
       if (bossLocked) {
         enemy.sprite.setVelocity(0, 0);
+        this.updateEnemyAnimation(enemy, time);
         continue;
       }
       if (enemy.zone === "boss") enemy.sprite.setAlpha(1);
       if (this.combat.isImmobilized(enemy.state, time)) {
         enemy.sprite.setVelocity(0, 0);
+        this.updateEnemyAnimation(enemy, time);
         continue;
       }
       const distance = Phaser.Math.Distance.Between(enemy.sprite.x, enemy.sprite.y, this.player.x, this.player.y);
@@ -304,11 +326,13 @@ export class WorldScene extends Phaser.Scene {
       }
       if (distance < (enemy.state.isBoss ? 78 : 48) && time >= enemy.nextAttackAt) {
         enemy.nextAttackAt = time + (enemy.state.isBoss ? 1250 : 1650);
+        enemy.animation.attack(time);
         this.gameState.damageActiveCharacter(enemy.state.isBoss ? 17 : 7);
         this.flashAt(this.player.x, this.player.y, 0xe98772, enemy.state.isBoss ? 54 : 30);
         if (enemy.state.isBoss) this.bossShockwave(enemy.sprite.x, enemy.sprite.y);
         if (this.gameState.isPartyDefeated && !this.restarting) this.restartAfterDefeat();
       }
+      this.updateEnemyAnimation(enemy, time);
     }
   }
 
@@ -414,8 +438,10 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private attackFx(texture: string, scale: number): void {
-    const fx = this.add.image(this.player.x + (this.player.flipX ? -34 : 34), this.player.y, texture)
-      .setFlipX(this.player.flipX)
+    const direction = this.directionVector(this.playerAnimationFrame.direction);
+    const fx = this.add.image(this.player.x + direction.x * 34, this.player.y + direction.y * 34, texture)
+      .setFlipX(this.playerAnimationFrame.direction === "left")
+      .setAngle(direction.y * 90)
       .setScale(scale)
       .setDepth(7);
     this.tweens.add({ targets: fx, alpha: 0, scale: scale * 1.35, duration: 210, onComplete: () => fx.destroy() });
@@ -424,6 +450,18 @@ export class WorldScene extends Phaser.Scene {
   private flashAt(x: number, y: number, color: number, radius: number): void {
     const flash = this.add.circle(x, y, radius, color, 0.45).setDepth(7);
     this.tweens.add({ targets: flash, alpha: 0, scale: 1.45, duration: 330, onComplete: () => flash.destroy() });
+  }
+
+  private centeredFx(texture: string, scale: number, duration: number): void {
+    const fx = this.add.image(this.player.x, this.player.y, texture).setDepth(7).setScale(scale);
+    this.tweens.add({ targets: fx, alpha: 0, scale: scale * 1.3, duration, onComplete: () => fx.destroy() });
+  }
+
+  private updateEnemyAnimation(enemy: EnemyActor, time: number): void {
+    const velocity = enemy.sprite.body?.velocity;
+    enemy.animationFrame = enemy.animation.resolve(velocity?.x ?? 0, velocity?.y ?? 0, time);
+    enemy.sprite.setTexture(enemy.animationFrame.texture);
+    if (velocity?.x) enemy.sprite.setFlipX(velocity.x < 0);
   }
 
   private bossShockwave(x: number, y: number): void {
@@ -435,6 +473,30 @@ export class WorldScene extends Phaser.Scene {
     this.restarting = true;
     this.hud.showDialog("派蒙", "队伍暂时失去了战斗能力，正在返回营地休整……", 1800);
     this.time.delayedCall(1900, () => this.scene.restart());
+  }
+
+  private updatePlayerAnimation(time: number, velocityX: number, velocityY: number): void {
+    this.playerAnimationFrame = this.playerAnimation.resolve(
+      this.gameState.activeCharacter.id,
+      velocityX,
+      velocityY,
+      time,
+    );
+    this.player.setTexture(this.playerAnimationFrame.texture).setFlipX(false);
+    this.player.body?.setOffset(this.playerAnimationFrame.action === "attack" ? 48 : 24, 54);
+  }
+
+  private directionVector(direction: PlayerDirection): Phaser.Math.Vector2 {
+    switch (direction) {
+      case "left":
+        return new Phaser.Math.Vector2(-1, 0);
+      case "right":
+        return new Phaser.Math.Vector2(1, 0);
+      case "up":
+        return new Phaser.Math.Vector2(0, -1);
+      case "down":
+        return new Phaser.Math.Vector2(0, 1);
+    }
   }
 
   private labelStyle(): Phaser.Types.GameObjects.Text.TextStyle {
