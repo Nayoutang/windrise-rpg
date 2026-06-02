@@ -1,0 +1,48 @@
+export const TEXTURES = {
+  grass: "grass",
+  path: "path",
+  water: "water",
+  ruin: "ruin",
+  tent: "tent",
+  crate: "crate",
+  bush: "bush",
+  flower: "flower",
+  tree: "tree",
+  gate: "gate",
+  ayaka: "ayaka",
+  furina: "furina",
+  scout: "scout",
+  hydroSlime: "hydro-slime",
+  cryoSlime: "cryo-slime",
+  hilichurlFighter: "hilichurl-fighter",
+  hilichurlShooter: "hilichurl-shooter",
+  mutatedMitachurl: "mutated-mitachurl",
+  cryoFx: "cryo-fx",
+  hydroFx: "hydro-fx",
+  freezeFx: "freeze-fx",
+} as const;
+
+export const GENERATED_ART = {
+  ayakaPortrait: "/assets/runtime/ayaka.png",
+  furinaPortrait: "/assets/runtime/furina.png",
+  enemySheet: "/assets/generated/windrise-enemies.png",
+  environmentSheet: "/assets/generated/windrise-environment.png",
+} as const;
+
+export const RUNTIME_ART: Partial<Record<(typeof TEXTURES)[keyof typeof TEXTURES], string>> = {
+  [TEXTURES.ayaka]: "/assets/runtime/ayaka.png",
+  [TEXTURES.furina]: "/assets/runtime/furina.png",
+  [TEXTURES.hydroSlime]: "/assets/runtime/hydro-slime.png",
+  [TEXTURES.cryoSlime]: "/assets/runtime/cryo-slime.png",
+  [TEXTURES.hilichurlFighter]: "/assets/runtime/hilichurl-fighter.png",
+  [TEXTURES.hilichurlShooter]: "/assets/runtime/hilichurl-shooter.png",
+  [TEXTURES.mutatedMitachurl]: "/assets/runtime/mutated-mitachurl.png",
+  [TEXTURES.tree]: "/assets/runtime/tree.png",
+  [TEXTURES.tent]: "/assets/runtime/tent.png",
+  [TEXTURES.crate]: "/assets/runtime/crate.png",
+  [TEXTURES.ruin]: "/assets/runtime/ruin.png",
+  [TEXTURES.bush]: "/assets/runtime/bush.png",
+  [TEXTURES.flower]: "/assets/runtime/flower.png",
+  [TEXTURES.gate]: "/assets/runtime/gate.png",
+  [TEXTURES.path]: "/assets/runtime/path.png",
+};

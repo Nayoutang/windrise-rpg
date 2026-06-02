@@ -1,7 +1,4 @@
-const gameRoot = document.querySelector<HTMLDivElement>("#game-root");
+import { createGame } from "./game/main";
+import "./ui/styles.css";
 
-if (!gameRoot) {
-  throw new Error("Missing #game-root");
-}
-
-gameRoot.textContent = "正在准备风起地...";
+createGame("game-root");

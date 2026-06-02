@@ -43,8 +43,8 @@ export class GameState {
     return Object.values(this.party).every((member) => member.hp <= 0);
   }
 
-  get switchCooldownMs(): number {
-    return Math.max(0, this.switchReadyAt);
+  getSwitchCooldown(now: number): number {
+    return Math.max(0, this.switchReadyAt - now);
   }
 
   switchCharacter(now: number): boolean {
